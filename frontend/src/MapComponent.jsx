@@ -19,6 +19,15 @@ const storageBuildingIcon = new L.divIcon({
   popupAnchor: [0, -25]
 });
 
+// NEW: Charging station icon
+const chargingStationIcon = new L.divIcon({
+  html: '<span style="font-size: 24px;">⚡</span>',
+  className: 'custom-charging-icon',
+  iconSize: [24, 24],
+  iconAnchor: [12, 24],
+  popupAnchor: [0, -20]
+});
+
 function InitialMapUpdater({ center, zoom }) {
   const map = useMap();
   const hasUpdated = useRef(false);
@@ -95,6 +104,9 @@ const MapComponent = ({ selectedTruck, facilityData, routeData, livePosition, on
 
   // Process route data for polyline
   const routeCoordinates = routeData?.features?.[0]?.geometry?.coordinates?.map(coord => [coord[1], coord[0]]) || [];
+  
+  // NEW: Get charging stations from route data
+  const chargingStations = routeData?.chargingStations || [];
 
   const FacilityPopup = ({ facility }) => {
     const [loading, setLoading] = useState(false);
@@ -141,6 +153,77 @@ const MapComponent = ({ selectedTruck, facilityData, routeData, livePosition, on
         >
           {loading ? 'Getting Route...' : 'Get Route'}
         </button>
+      </div>
+    );
+  };
+
+  // NEW: Charging Station Popup Component
+  const ChargingStationPopup = ({ station }) => {
+    const formatConnectors = (connectors) => {
+      if (!connectors || connectors.length === 0) return 'N/A';
+      return connectors.join(', ');
+    };
+
+    const formatPower = (powerKw) => {
+      return powerKw ? `${powerKw} kW` : 'N/A';
+    };
+
+    const formatDistance = (distanceKm) => {
+      return distanceKm ? `${distanceKm} km from route` : '';
+    };
+
+    return (
+      <div style={{ minWidth: '250px', fontSize: '14px' }}>
+        <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#1976d2' }}>
+          ⚡ {station.name}
+        </div>
+        
+        <div style={{ marginBottom: '6px' }}>
+          <strong>Address:</strong> {station.address}
+        </div>
+        
+        <div style={{ marginBottom: '6px' }}>
+          <strong>Power:</strong> {formatPower(station.powerKw)}
+        </div>
+        
+        <div style={{ marginBottom: '6px' }}>
+          <strong>Connectors:</strong> {formatConnectors(station.connectorTypes)}
+        </div>
+        
+        {station.operatorName && (
+          <div style={{ marginBottom: '6px' }}>
+            <strong>Operator:</strong> {station.operatorName}
+          </div>
+        )}
+        
+        {station.distanceFromRouteKm && (
+          <div style={{ marginBottom: '6px', color: '#666' }}>
+            📍 {formatDistance(station.distanceFromRouteKm)}
+          </div>
+        )}
+        
+        {station.openingHours && station.openingHours !== 'Unknown' && (
+          <div style={{ marginBottom: '6px', fontSize: '12px' }}>
+            <strong>Hours:</strong> {station.openingHours}
+          </div>
+        )}
+        
+        {station.phoneNumber && (
+          <div style={{ marginBottom: '6px', fontSize: '12px' }}>
+            <strong>Phone:</strong> {station.phoneNumber}
+          </div>
+        )}
+        
+        <div style={{ 
+          marginTop: '8px', 
+          padding: '4px 8px', 
+          backgroundColor: station.isOperational ? '#e8f5e8' : '#ffeaea',
+          borderRadius: '4px',
+          fontSize: '12px',
+          color: station.isOperational ? '#2e7d32' : '#d32f2f'
+        }}>
+          Status: {station.isOperational ? 'Operational' : 'Out of Order'}
+        </div>
       </div>
     );
   };
@@ -204,6 +287,27 @@ const MapComponent = ({ selectedTruck, facilityData, routeData, livePosition, on
           return null;
         })}
 
+        {/* NEW: Charging Station Markers */}
+        {chargingStations.map((station) => {
+          const stationLatitude = station?.location?.coordinates?.[1];
+          const stationLongitude = station?.location?.coordinates?.[0];
+
+          if (typeof stationLatitude === 'number' && typeof stationLongitude === 'number') {
+            return (
+              <Marker
+                key={station._id || station.stationId}
+                position={[stationLatitude, stationLongitude]}
+                icon={chargingStationIcon}
+              >
+                <Popup>
+                  <ChargingStationPopup station={station} />
+                </Popup>
+              </Marker>
+            );
+          }
+          return null;
+        })}
+
         {!showMarker && (
           <div style={{
             position: 'absolute',
@@ -222,6 +326,29 @@ const MapComponent = ({ selectedTruck, facilityData, routeData, livePosition, on
           </div>
         )}
       </MapContainer>
+      
+      {/* NEW: Charging Stations Legend */}
+      {chargingStations.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          left: '20px',
+          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+          padding: '12px',
+          borderRadius: '8px',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+          zIndex: 1000,
+          fontSize: '14px',
+          maxWidth: '300px'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>
+            ⚡ Charging Stations ({chargingStations.length})
+          </div>
+          <div style={{ fontSize: '12px', color: '#666' }}>
+            Found {chargingStations.length} charging station{chargingStations.length !== 1 ? 's' : ''} along your route
+          </div>
+        </div>
+      )}
     </div>
   );
 };

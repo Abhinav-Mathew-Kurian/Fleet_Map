@@ -8,6 +8,8 @@ const axios = require('axios');
 const { processRouteForMovement } = require('./RouteLogic');
 const Route = require('./Route');
 const Fleet=require('./Fleet')
+const { findChargingStationsAlongRoute } = require('./RouteChargingLogic');
+const ChargingStation = require('./ChargingStation');
 
 const app = express();
 app.use(express.json());
@@ -95,7 +97,7 @@ app.get('/getRoute', async (req, res) => {
       metadata: data.metadata,
       startCoordinates: [parseFloat(startLng), parseFloat(startLat)],
       endCoordinates: [parseFloat(endLng), parseFloat(endLat)],
-      status: 'created', // created, alive, dead
+      status: 'created',
       isActive: false
     });
 
@@ -104,6 +106,19 @@ app.get('/getRoute', async (req, res) => {
     
     const movementPoints = processRouteForMovement(data);
     
+    // NEW: Find charging stations along the route
+    let chargingStations = [];
+    try {
+      const routeCoordinates = data.features[0]?.geometry?.coordinates || [];
+      if (routeCoordinates.length > 0) {
+        chargingStations = await findChargingStationsAlongRoute(routeCoordinates, 5, 4);
+        console.log(`Found ${chargingStations.length} charging stations along the route`);
+      }
+    } catch (error) {
+      console.error('Error finding charging stations:', error);
+      // Continue without charging stations if there's an error
+    }
+    
     res.json({
       ...data,
       routeId: newRoute._id,
@@ -111,12 +126,66 @@ app.get('/getRoute', async (req, res) => {
       movementPoints: movementPoints,
       totalDistance: data.features[0].properties.summary.distance,
       estimatedDuration: data.features[0].properties.summary.duration,
-      status: newRoute.status
+      status: newRoute.status,
+      chargingStations: chargingStations // NEW: Include charging stations in response
     });
 
   } catch (err) {
     console.error('Error getting and saving route:', err);
     res.status(500).json({ error: 'Failed to get route' });
+  }
+});
+
+// NEW: Add endpoint to populate charging stations (for admin use)
+app.post('/populateChargingStations', async (req, res) => {
+  try {
+    const { populateChargingStationsFromAPI } = require('./RouteChargingLogic');
+    
+    // You can specify a bounding box or country code
+    const { boundingBox, countryCode } = req.body;
+    
+    await populateChargingStationsFromAPI(boundingBox, countryCode || 'US');
+    
+    res.json({ 
+      success: true, 
+      message: 'Charging stations populated successfully' 
+    });
+  } catch (error) {
+    console.error('Error populating charging stations:', error);
+    res.status(500).json({ error: 'Failed to populate charging stations' });
+  }
+});
+
+// NEW: Add endpoint to get charging stations in an area (for testing)
+app.get('/getChargingStations', async (req, res) => {
+  try {
+    const { lat, lng, radius = 10 } = req.query;
+    
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Latitude and longitude are required' });
+    }
+    
+    const stations = await ChargingStation.find({
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [parseFloat(lng), parseFloat(lat)]
+          },
+          $maxDistance: radius * 1000 // Convert km to meters
+        }
+      },
+      isOperational: true
+    }).limit(50);
+    
+    res.json({
+      success: true,
+      stations: stations,
+      count: stations.length
+    });
+  } catch (error) {
+    console.error('Error fetching charging stations:', error);
+    res.status(500).json({ error: 'Failed to fetch charging stations' });
   }
 });
 
@@ -258,7 +327,7 @@ app.post('/startNavigation', async (req, res) => {
   try {
     // Method 1: Try to find and update existing fleet document
     const fleetUpdate = await Fleet.findOneAndUpdate(
-      { userId: userId },
+      { _id: userId },
       {
         $set: {
           'location.coordinates': currentPosition,
@@ -575,6 +644,28 @@ app.post('/resumeNavigation', async (req, res) => {
   } catch (error) {
     console.error('Error resuming navigation:', error);
     res.status(500).json({ error: 'Failed to resume navigation' });
+  }
+});
+app.get('/getRoute/:routeId', async (req, res) => {
+  try {
+    const { routeId } = req.params;
+    
+    const route = await Route.findById(routeId);
+    if (!route) {
+      return res.status(404).json({ error: 'Route not found' });
+    }
+    
+    // Return the route data in GeoJSON format
+    res.json({
+      type: route.type,
+      features: route.features,
+      bbox: route.bbox,
+      metadata: route.metadata
+    });
+    
+  } catch (error) {
+    console.error('Error fetching route geometry:', error);
+    res.status(500).json({ error: 'Failed to fetch route geometry' });
   }
 });
 

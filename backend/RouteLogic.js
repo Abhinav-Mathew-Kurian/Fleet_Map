@@ -36,4 +36,4 @@ function processRouteForMovement(routeData) {
   return movementPoints;
 }
 
-export { interpolateCoordinates, processRouteForMovement };
+module.exports = { interpolateCoordinates, processRouteForMovement };

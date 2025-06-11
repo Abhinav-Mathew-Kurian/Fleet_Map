@@ -456,11 +456,11 @@ const MainLayout = () => {
                       {navigationData && (
                         <Box sx={{ mb: 2 }}>
                           <Typography variant="body2" sx={{ mb: 1 }}>
-                            <strong>Progress:</strong> {navigationData.progress.toFixed(2)}%
+                            <strong>Progress:</strong> {typeof navigationData.progress === 'number' ? navigationData.progress.toFixed(2) : '0.00'}%
                           </Typography>
                           <LinearProgress
                             variant="determinate"
-                            value={navigationData.progress}
+                            value={typeof navigationData.progress === 'number' ? navigationData.progress : 0}
                             sx={{ mb: 2 }}
                           />
                           <Typography variant="body2" sx={{ mb: 1 }}>
